@@ -1,4 +1,5 @@
-﻿using Azure.Messaging.ServiceBus;
+﻿using System.Transactions;
+using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Configuration;
 
 Console.WriteLine("Hello, World!");
@@ -13,32 +14,22 @@ await using var client = new ServiceBusClient(connectionString);
 ServiceBusSender sender = client.CreateSender("firstqueue");
 
 // Send message
-await sender.SendMessageAsync(new ServiceBusMessage("learning about queues"));
+await sender.SendMessageAsync(new ServiceBusMessage("learning about transactions"));
 
-// Create processor
-await using ServiceBusProcessor serviceBusProcessor = client.CreateProcessor(
-    "firstqueue",
-    new ServiceBusProcessorOptions { AutoCompleteMessages = true, MaxConcurrentCalls = 1 }
-);
+// Create receiver
+ServiceBusReceiver receiver = client.CreateReceiver("firstqueue");
+ServiceBusReceivedMessage recvMsg = await receiver.ReceiveMessageAsync();
 
-// Configure message
-serviceBusProcessor.ProcessMessageAsync += MessageHandler;
-serviceBusProcessor.ProcessErrorAsync += ErrorHandler;
-
-// Configure handler
-async Task MessageHandler(ProcessMessageEventArgs processMessageEventArgs)
+using (var ts = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
 {
-    // Process your message
-    Console.WriteLine(processMessageEventArgs.Message.Body.ToString());
+    await sender.SendMessageAsync(new ServiceBusMessage("Inside Transactions"));
+    await receiver.CompleteMessageAsync(recvMsg);
+
+    ts.Complete();
 }
 
-// Configure error
-Task ErrorHandler(ProcessErrorEventArgs processErrorEventArgs)
-{
-    Console.WriteLine(processErrorEventArgs.ErrorSource);
-    return Task.CompletedTask;
-}
-
-// Start processing
-await serviceBusProcessor.StartProcessingAsync();
+// for (int i = 0; i < 4; i++)
+// {
+//     ServiceBusReceivedMessage recmsg = await receiver.ReceiveMessageAsync();
+// }
 Console.ReadLine();
